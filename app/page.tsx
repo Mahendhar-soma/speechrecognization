@@ -14,11 +14,11 @@ const EXAMPLE_SENTENCES = [
   "నేను హైదరాబాద్‌లో ఉంటున్నాను.",
   "నేను సాఫ్ట్‌వేర్ ఇంజనీర్‌గా పనిచేస్తున్నాను.",
   "రేపు ఉదయం పది గంటలకు మీటింగ్ ఉంది.",
-  "మన గ్రామంలో రేపు క్రికెట్ మ్యాచ్ జరుగుతుంది.",
 ];
 
 const COPY_FAIL = "టెక్స్ట్ కాపీ కాలేదు. దయచేసి మళ్లీ ప్రయత్నించండి.";
 const SHARE_FAIL = "టెక్స్ట్ పంపలేకపోయాము. కాపీ చేసి పేస్ట్ చేయండి.";
+const CORRECT_FAIL = "టెక్స్ట్ సరిచేయలేకపోయాము. దయచేసి మళ్లీ ప్రయత్నించండి.";
 
 function copyText(value: string): boolean {
   const field = document.createElement("textarea");
@@ -39,6 +39,8 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const [shareError, setShareError] = useState("");
+  const [correctError, setCorrectError] = useState("");
+  const [isCorrecting, setIsCorrecting] = useState(false);
   const [showHelp, setShowHelp] = useState<boolean | null>(null);
   const committedTextRef = useRef("");
   const sessionTextRef = useRef("");
@@ -149,6 +151,39 @@ export default function Home() {
     }
   }, [text]);
 
+  const handleCorrect = useCallback(async () => {
+    const value = text.trim();
+    if (!value || isListening || isCorrecting) {
+      return;
+    }
+
+    stopSpeaking();
+    setCorrectError("");
+    setIsCorrecting(true);
+
+    try {
+      const response = await fetch("/api/correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: value }),
+      });
+      const data = (await response.json()) as { text?: string; error?: string };
+      if (!response.ok || typeof data.text !== "string" || !data.text.trim()) {
+        throw new Error(data.error || "correct-failed");
+      }
+
+      const next = data.text.trim();
+      committedTextRef.current = next;
+      sessionTextRef.current = "";
+      setRecognizedText(value !== next ? value : "");
+      setText(next);
+    } catch {
+      setCorrectError(CORRECT_FAIL);
+    } finally {
+      setIsCorrecting(false);
+    }
+  }, [isCorrecting, isListening, stopSpeaking, text]);
+
   const handleClear = useCallback(() => {
     stopSpeaking();
     acceptingRef.current = false;
@@ -159,6 +194,7 @@ export default function Home() {
     setCopied(false);
     setCopyError("");
     setShareError("");
+    setCorrectError("");
   }, [stopSpeaking]);
 
   const hideHelp = useCallback(() => {
@@ -247,6 +283,7 @@ export default function Home() {
             <li>మైక్ మళ్లీ నొక్కండి — టెక్స్ట్ ఇక్కడ కనిపిస్తుంది.</li>
             <li>వాక్యం సరిచేయబడుతుంది. తప్పు ఉంటే టెక్స్ట్‌లో సరిచేయండి.</li>
             <li>వినండి నొక్కి సరిచేసిన టెక్స్ట్ వినండి.</li>
+            <li>తెలుగు టెక్స్ట్ సరిచేయండి నొక్కి AI తో సరిచేయండి.</li>
           </ol>
         </section>
       ) : null}
@@ -278,10 +315,15 @@ export default function Home() {
             copyError={copyError}
             listenError={speakError}
             shareError={shareError}
+            correctError={correctError}
             isSpeaking={isSpeaking}
             isPreparingSpeech={isPreparing}
+            isCorrecting={isCorrecting}
             onListen={() => speakText(text)}
             onStopListen={stopSpeaking}
+            onCorrect={() => {
+              void handleCorrect();
+            }}
             onCopy={() => {
               void handleCopy();
             }}

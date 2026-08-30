@@ -8,10 +8,13 @@ type ActionButtonsProps = {
   copyError: string;
   listenError: string;
   shareError: string;
+  correctError: string;
   isSpeaking: boolean;
   isPreparingSpeech: boolean;
+  isCorrecting: boolean;
   onListen: () => void;
   onStopListen: () => void;
+  onCorrect: () => void;
   onCopy: () => void;
   onShare: () => void;
   onClear: () => void;
@@ -23,10 +26,13 @@ export default function ActionButtons({
   copyError,
   listenError,
   shareError,
+  correctError,
   isSpeaking,
   isPreparingSpeech,
+  isCorrecting,
   onListen,
   onStopListen,
+  onCorrect,
   onCopy,
   onShare,
   onClear,
@@ -59,6 +65,15 @@ export default function ActionButtons({
 
   return (
     <div className="flex w-full flex-col gap-3">
+      <button
+        type="button"
+        onClick={onCorrect}
+        disabled={!hasText || isCorrecting}
+        aria-label="తెలుగు టెక్స్ట్ సరిచేయండి"
+        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+      >
+        {isCorrecting ? "సరిచేస్తోంది…" : "తెలుగు టెక్స్ట్ సరిచేయండి"}
+      </button>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
           type="button"
@@ -131,6 +146,11 @@ export default function ActionButtons({
       {listenError ? (
         <p className="text-center text-sm font-medium text-red-700" role="alert">
           {listenError}
+        </p>
+      ) : null}
+      {correctError ? (
+        <p className="text-center text-sm font-medium text-red-700" role="alert">
+          {correctError}
         </p>
       ) : null}
     </div>

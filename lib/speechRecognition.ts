@@ -71,22 +71,6 @@ export function isSpeechRecognitionSupported(): boolean {
   return getSpeechRecognitionConstructor() !== null;
 }
 
-export async function warmupMicrophone(): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-    return true;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    for (const track of stream.getTracks()) {
-      track.stop();
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function createSpeechRecognition(): SpeechRecognitionInstance | null {
   const SpeechRecognitionAPI = getSpeechRecognitionConstructor();
   if (!SpeechRecognitionAPI) {
@@ -160,7 +144,7 @@ export function correctTeluguTranscript(text: string): string {
   value = value.replace(/\s+([,.!?;:।॥])/g, "$1");
   value = value.replace(/([,.!?;:।॥])(?!\s|$)/g, "$1 ");
   value = value.replace(/([.!?।॥])\1+/g, "$1");
-  value = value.replace(/([^\s]+)(?:\s+\1){1,}/giu, "$1");
+  value = value.replace(/([^\s]+)(?:\s+\1){2,}/giu, "$1");
   value = value.replace(/\s+/g, " ").trim();
 
   if (value && !/[.!?।॥]$/.test(value)) {

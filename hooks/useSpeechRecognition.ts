@@ -5,8 +5,8 @@ import {
   createSpeechRecognition,
   getSpeechErrorMessage,
   isSpeechRecognitionSupported,
-  warmupMicrophone,
   type RecognitionState,
+  type SpeechRecognitionEventLike,
   type SpeechRecognitionInstance,
 } from "@/lib/speechRecognition";
 
@@ -15,7 +15,8 @@ type UseSpeechRecognitionOptions = {
 };
 
 const emptySubscribe = () => () => {};
-const RESTART_DELAY_MS = 0;
+const RESTART_DELAY_MS = 180;
+const MAX_NETWORK_RETRIES = 3;
 
 export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
   const isSupported = useSyncExternalStore(
@@ -30,8 +31,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const wantListeningRef = useRef(false);
+  const startingRef = useRef(false);
   const restartTimerRef = useRef<number | null>(null);
   const interimRef = useRef("");
+  const networkRetriesRef = useRef(0);
   const onFinalRef = useRef(options.onFinalTranscript);
 
   useEffect(() => {
@@ -45,10 +48,18 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
     }
   }, []);
 
-  const bindRecognitionRef = useRef<(recognition: SpeechRecognitionInstance) => void>(() => {});
+  const flushInterim = useCallback(() => {
+    const leftover = interimRef.current.trim();
+    interimRef.current = "";
+    setInterimTranscript("");
+    if (leftover) {
+      onFinalRef.current?.(leftover);
+    }
+  }, []);
 
   const bindRecognition = useCallback((recognition: SpeechRecognitionInstance) => {
     recognition.onstart = () => {
+      startingRef.current = false;
       if (wantListeningRef.current) {
         setRuntimeState("listening");
       }
@@ -56,7 +67,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
 
     recognition.onspeechend = null;
 
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let interim = "";
       let finalChunk = "";
 
@@ -71,18 +82,20 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
         }
       }
 
-      if (interim || finalChunk.trim()) {
+      const trimmedFinal = finalChunk.trim();
+      if (trimmedFinal) {
+        onFinalRef.current?.(trimmedFinal);
+        networkRetriesRef.current = 0;
         setErrorMessage("");
       }
 
       if (interim !== interimRef.current) {
         interimRef.current = interim;
         setInterimTranscript(interim);
-      }
-
-      const trimmedFinal = finalChunk.trim();
-      if (trimmedFinal) {
-        onFinalRef.current?.(trimmedFinal);
+        if (interim) {
+          setErrorMessage("");
+        }
+      } else if (trimmedFinal && !interim) {
         interimRef.current = "";
         setInterimTranscript("");
       }
@@ -100,19 +113,30 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
         return;
       }
 
+      if (error === "network" && wantListeningRef.current) {
+        networkRetriesRef.current += 1;
+        if (networkRetriesRef.current < MAX_NETWORK_RETRIES) {
+          return;
+        }
+      }
+
       wantListeningRef.current = false;
+      startingRef.current = false;
       clearRestartTimer();
+      interimRef.current = "";
       setInterimTranscript("");
       setRuntimeState("error");
       setErrorMessage(getSpeechErrorMessage(error));
     };
 
     recognition.onend = () => {
+      startingRef.current = false;
+      flushInterim();
+
       if (!wantListeningRef.current || recognitionRef.current !== recognition) {
         if (recognitionRef.current === recognition && !wantListeningRef.current) {
           recognitionRef.current = null;
         }
-        setInterimTranscript("");
         setRuntimeState((current) =>
           current === "error" || current === "unsupported" ? current : "idle",
         );
@@ -122,12 +146,14 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       clearRestartTimer();
       restartTimerRef.current = window.setTimeout(() => {
         restartTimerRef.current = null;
-        if (!wantListeningRef.current) {
+        if (!wantListeningRef.current || startingRef.current) {
           return;
         }
 
+        const current = recognitionRef.current ?? recognition;
+        startingRef.current = true;
         try {
-          recognition.start();
+          current.start();
           setRuntimeState("listening");
         } catch {
           try {
@@ -135,49 +161,31 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
             if (!next) {
               wantListeningRef.current = false;
               recognitionRef.current = null;
+              startingRef.current = false;
               setRuntimeState("idle");
               return;
             }
             recognitionRef.current = next;
-            bindRecognitionRef.current(next);
+            bindRecognition(next);
             next.start();
             setRuntimeState("listening");
           } catch {
             wantListeningRef.current = false;
             recognitionRef.current = null;
+            startingRef.current = false;
             setRuntimeState("idle");
             setInterimTranscript("");
           }
         }
       }, RESTART_DELAY_MS);
     };
-  }, [clearRestartTimer]);
-
-  useEffect(() => {
-    bindRecognitionRef.current = bindRecognition;
-  }, [bindRecognition]);
-
-  useEffect(() => {
-    void warmupMicrophone();
-    if (!recognitionRef.current) {
-      const recognition = createSpeechRecognition();
-      if (recognition) {
-        recognitionRef.current = recognition;
-        bindRecognition(recognition);
-      }
-    }
-  }, [bindRecognition]);
+  }, [clearRestartTimer, flushInterim]);
 
   const stopRecognition = useCallback(() => {
     wantListeningRef.current = false;
+    startingRef.current = false;
     clearRestartTimer();
-
-    const leftover = interimRef.current.trim();
-    if (leftover) {
-      onFinalRef.current?.(leftover);
-    }
-    interimRef.current = "";
-    setInterimTranscript("");
+    flushInterim();
 
     const recognition = recognitionRef.current;
     if (!recognition) {
@@ -191,7 +199,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       recognitionRef.current = null;
       setRuntimeState("idle");
     }
-  }, [clearRestartTimer]);
+  }, [clearRestartTimer, flushInterim]);
 
   const startRecognition = useCallback(() => {
     if (!isSpeechRecognitionSupported()) {
@@ -204,6 +212,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
     }
 
     wantListeningRef.current = true;
+    networkRetriesRef.current = 0;
     setErrorMessage("");
     interimRef.current = "";
     setInterimTranscript("");
@@ -221,6 +230,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       bindRecognition(recognition);
     }
 
+    startingRef.current = true;
     try {
       recognition.start();
     } catch {
@@ -233,6 +243,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       const retry = createSpeechRecognition();
       if (!retry) {
         wantListeningRef.current = false;
+        startingRef.current = false;
         recognitionRef.current = null;
         setRuntimeState("error");
         setErrorMessage(getSpeechErrorMessage("start-failed"));
@@ -245,6 +256,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
         retry.start();
       } catch {
         wantListeningRef.current = false;
+        startingRef.current = false;
         recognitionRef.current = null;
         setRuntimeState("error");
         setErrorMessage(getSpeechErrorMessage("start-failed"));
@@ -268,6 +280,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
   useEffect(() => {
     return () => {
       wantListeningRef.current = false;
+      startingRef.current = false;
       if (restartTimerRef.current != null) {
         window.clearTimeout(restartTimerRef.current);
       }
