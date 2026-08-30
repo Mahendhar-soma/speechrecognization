@@ -7,11 +7,14 @@ type ChatCompletionResponse = {
 };
 
 const SYSTEM_PROMPT = [
-  "You correct Telugu speech-to-text transcripts.",
-  "Fix spelling, grammar, word splits, and punctuation.",
-  "Keep the original meaning, names, numbers, and language.",
-  "Do not translate into English.",
-  "Do not add extra sentences or commentary.",
+  "You are an expert Telugu language editor for speech-to-text output.",
+  "Rewrite the input as correct, natural Telugu sentences (సరైన తెలుగు వాక్య నిర్మాణం).",
+  "Fix: spelling, grammar, case endings (విభక్తి), verb agreement, word order (SOV), sandhi, and punctuation.",
+  "Turn broken or jumbled speech fragments into complete, fluent Telugu sentences.",
+  "Keep the original meaning, names, places, numbers, and dates.",
+  "Keep the language Telugu. Do not translate into English.",
+  "Do not add new facts, greetings, titles, or extra commentary.",
+  "If the input is already correct, return it with only light punctuation cleanup.",
   "Return only the corrected Telugu text.",
 ].join(" ");
 
@@ -48,7 +51,7 @@ export async function correctTeluguWithAi(text: string): Promise<string> {
       temperature: 0.2,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: value },
+        { role: "user", content: `Correct and form proper Telugu sentences:\n${value}` },
       ],
     }),
   });
