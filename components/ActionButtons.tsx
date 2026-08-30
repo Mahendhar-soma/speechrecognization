@@ -65,8 +65,9 @@ export default function ActionButtons({
           onClick={listenBusy ? onStopListen : onListen}
           disabled={!hasText}
           aria-label={listenBusy ? "వినడం ఆపండి" : "టెక్స్ట్ వినండి"}
-          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-orange-600 px-3 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-orange-700 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-orange-600 px-3 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-orange-700 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
         >
+          <SpeakerIcon />
           {isPreparingSpeech ? "సిద్ధం…" : isSpeaking ? "ఆపండి" : "వినండి"}
         </button>
         <button
@@ -133,5 +134,24 @@ export default function ActionButtons({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18 6a8 8 0 0 1 0 12" />
+    </svg>
   );
 }

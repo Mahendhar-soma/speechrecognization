@@ -149,6 +149,27 @@ export function appendTranscript(existing: string, incoming: string): string {
   return `${existing}${separator}${next}`;
 }
 
+export function correctTeluguTranscript(text: string): string {
+  let value = text.normalize("NFC").replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+  if (!value) {
+    return "";
+  }
+
+  value = value.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]+/g, " ");
+  value = value.replace(/\s+/g, " ");
+  value = value.replace(/\s+([,.!?;:।॥])/g, "$1");
+  value = value.replace(/([,.!?;:।॥])(?!\s|$)/g, "$1 ");
+  value = value.replace(/([.!?।॥])\1+/g, "$1");
+  value = value.replace(/([^\s]+)(?:\s+\1){1,}/giu, "$1");
+  value = value.replace(/\s+/g, " ").trim();
+
+  if (value && !/[.!?।॥]$/.test(value)) {
+    value = `${value}.`;
+  }
+
+  return value;
+}
+
 export function countGraphemes(text: string): number {
   if (!text) {
     return 0;

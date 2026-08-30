@@ -8,15 +8,17 @@ type TranscriptEditorProps = {
   onChange: (value: string) => void;
   interimTranscript: string;
   isListening: boolean;
+  recognizedText?: string;
 };
 
-const PLACEHOLDER = "మైక్ పట్టుకుని మాట్లాడండి — టెక్స్ట్ ఇక్కడ వస్తుంది. తప్పు ఉంటే ఇక్కడే సరిచేయండి.";
+const PLACEHOLDER = "మైక్ నొక్కి మాట్లాడండి — టెక్స్ట్ ఇక్కడ వస్తుంది. తప్పు ఉంటే ఇక్కడే సరిచేయండి.";
 
 export default function TranscriptEditor({
   value,
   onChange,
   interimTranscript,
   isListening,
+  recognizedText = "",
 }: TranscriptEditorProps) {
   const liveRef = useRef<HTMLDivElement>(null);
   const liveValue = interimTranscript
@@ -42,7 +44,7 @@ export default function TranscriptEditor({
     <section className="w-full">
       <div className="mb-2 flex items-end justify-between gap-3">
         <label htmlFor="telugu-transcript" className="text-base font-semibold text-stone-900">
-          తెలుగు టెక్స్ట్
+          {isListening ? "తెలుగు టెక్స్ట్" : "సరిచేసిన టెక్స్ట్"}
         </label>
         {isListening ? (
           <p className="flex items-center gap-1.5 text-xs font-medium text-orange-700">
@@ -51,6 +53,13 @@ export default function TranscriptEditor({
           </p>
         ) : null}
       </div>
+
+      {!isListening && recognizedText ? (
+        <p className="mb-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm leading-relaxed text-stone-600">
+          <span className="font-medium text-stone-800">గుర్తించిన టెక్స్ట్: </span>
+          {recognizedText}
+        </p>
+      ) : null}
 
       {isListening ? (
         <div

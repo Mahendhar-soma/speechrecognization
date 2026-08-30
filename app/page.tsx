@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ActionButtons from "@/components/ActionButtons";
 import StatusIndicator from "@/components/StatusIndicator";
 import TranscriptEditor from "@/components/TranscriptEditor";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
-import { appendTranscript } from "@/lib/speechRecognition";
+import { appendTranscript, correctTeluguTranscript } from "@/lib/speechRecognition";
 
 const EXAMPLE_SENTENCES = [
   "నా పేరు మహేందర్.",
@@ -35,13 +35,22 @@ function copyText(value: string): boolean {
 
 export default function Home() {
   const [text, setText] = useState("");
+  const [recognizedText, setRecognizedText] = useState("");
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const [shareError, setShareError] = useState("");
   const [showHelp, setShowHelp] = useState<boolean | null>(null);
+  const committedTextRef = useRef("");
+  const sessionTextRef = useRef("");
+  const acceptingRef = useRef(false);
 
   const handleFinalTranscript = useCallback((chunk: string) => {
-    setText((current) => appendTranscript(current, chunk));
+    if (!acceptingRef.current) {
+      return;
+    }
+
+    sessionTextRef.current = appendTranscript(sessionTextRef.current, chunk);
+    setText(appendTranscript(committedTextRef.current, sessionTextRef.current));
   }, []);
 
   const { state, interimTranscript, errorMessage, startRecognition, stopRecognition } =
@@ -51,6 +60,32 @@ export default function Home() {
 
   const { isSpeaking, isPreparing, speakError, speakText, stopSpeaking } = useSpeechSynthesis();
   const isListening = state === "listening" || state === "processing";
+
+  const handleMicToggle = useCallback(() => {
+    if (state === "unsupported") {
+      return;
+    }
+
+    if (isListening) {
+      stopRecognition();
+      acceptingRef.current = false;
+      const raw = sessionTextRef.current.trim();
+      const corrected = correctTeluguTranscript(raw);
+      const next = appendTranscript(committedTextRef.current, corrected);
+      committedTextRef.current = next;
+      sessionTextRef.current = "";
+      setText(next);
+      setRecognizedText(raw && raw !== corrected ? raw : "");
+      return;
+    }
+
+    stopSpeaking();
+    acceptingRef.current = true;
+    sessionTextRef.current = "";
+    committedTextRef.current = text;
+    setRecognizedText("");
+    startRecognition();
+  }, [isListening, startRecognition, state, stopRecognition, stopSpeaking, text]);
 
   useEffect(() => {
     try {
@@ -116,7 +151,11 @@ export default function Home() {
 
   const handleClear = useCallback(() => {
     stopSpeaking();
+    acceptingRef.current = false;
+    committedTextRef.current = "";
+    sessionTextRef.current = "";
     setText("");
+    setRecognizedText("");
     setCopied(false);
     setCopyError("");
     setShareError("");
@@ -147,7 +186,7 @@ export default function Home() {
     function onKeyDown(event: KeyboardEvent) {
       if (event.ctrlKey && event.key === "Enter" && !event.repeat) {
         event.preventDefault();
-        startRecognition();
+        handleMicToggle();
         return;
       }
 
@@ -157,20 +196,11 @@ export default function Home() {
       }
     }
 
-    function onKeyUp(event: KeyboardEvent) {
-      if (event.key === "Enter" && event.ctrlKey) {
-        event.preventDefault();
-        stopRecognition();
-      }
-    }
-
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
     };
-  }, [handleCopy, startRecognition, stopRecognition]);
+  }, [handleCopy, handleMicToggle]);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-5 sm:px-6 sm:py-8">
@@ -213,33 +243,31 @@ export default function Home() {
             </button>
           </div>
           <ol className="list-decimal space-y-1 pl-5">
-            <li>మైక్ నొక్కి పట్టుకుని తెలుగులో మాట్లాడండి.</li>
-            <li>విడుదల చేయండి — టెక్స్ట్ ఇక్కడ కనిపిస్తుంది.</li>
-            <li>వినండి. తప్పు ఉంటే టెక్స్ట్‌లో సరిచేయండి.</li>
-            <li>కాపీ చేసి WhatsApp, Gmail లో పేస్ట్ చేయండి.</li>
+            <li>మైక్ నొక్కండి — తెలుగులో మాట్లాడండి.</li>
+            <li>మైక్ మళ్లీ నొక్కండి — టెక్స్ట్ ఇక్కడ కనిపిస్తుంది.</li>
+            <li>వాక్యం సరిచేయబడుతుంది. తప్పు ఉంటే టెక్స్ట్‌లో సరిచేయండి.</li>
+            <li>వినండి నొక్కి సరిచేసిన టెక్స్ట్ వినండి.</li>
           </ol>
         </section>
       ) : null}
 
       <section className="mt-5 rounded-3xl border border-orange-100 bg-white p-5 shadow-[0_12px_40px_rgba(194,65,12,0.08)] sm:p-7">
-        <VoiceRecorder
-          state={state}
-          onHoldStart={() => {
-            stopSpeaking();
-            startRecognition();
-          }}
-          onHoldEnd={stopRecognition}
-        />
+        <VoiceRecorder state={state} onToggle={handleMicToggle} />
 
         <div className="mt-5">
           <TranscriptEditor
             value={text}
             onChange={(next) => {
               stopSpeaking();
+              acceptingRef.current = false;
+              committedTextRef.current = next;
+              sessionTextRef.current = "";
+              setRecognizedText("");
               setText(next);
             }}
             interimTranscript={interimTranscript}
             isListening={isListening}
+            recognizedText={recognizedText}
           />
         </div>
 
@@ -279,7 +307,11 @@ export default function Home() {
               type="button"
               onClick={() => {
                 stopSpeaking();
-                setText((current) => appendTranscript(current, sentence));
+                setText((current) => {
+                  const next = appendTranscript(current, sentence);
+                  committedTextRef.current = next;
+                  return next;
+                });
               }}
               className="rounded-full border border-orange-100 bg-white px-3 py-2 text-left text-sm leading-relaxed text-stone-800 outline-none transition hover:border-orange-200 hover:bg-orange-50 focus-visible:ring-2 focus-visible:ring-orange-500"
             >

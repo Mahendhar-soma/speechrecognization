@@ -19,10 +19,10 @@ export default function AboutPage() {
 
         <h2 className="mt-8 text-xl font-semibold text-stone-900">ఎలా ఉపయోగించాలి</h2>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-stone-700">
-          <li>మైక్ నొక్కి పట్టుకుని తెలుగులో మాట్లాడండి.</li>
-          <li>విడుదల చేయండి — టెక్స్ట్ ఇక్కడ కనిపిస్తుంది.</li>
-          <li>వినండి. తప్పు ఉంటే టెక్స్ట్‌లో సరిచేయండి.</li>
-          <li>కాపీ చేసి WhatsApp, Gmail లో పేస్ట్ చేయండి.</li>
+          <li>మైక్ నొక్కండి — తెలుగులో మాట్లాడండి.</li>
+          <li>మైక్ మళ్లీ నొక్కండి — టెక్స్ట్ ఇక్కడ కనిపిస్తుంది.</li>
+          <li>వాక్యం సరిచేయబడుతుంది. తప్పు ఉంటే టెక్స్ట్‌లో సరిచేయండి.</li>
+          <li>వినండి నొక్కి సరిచేసిన టెక్స్ట్ వినండి.</li>
         </ol>
 
         <h2 className="mt-8 text-xl font-semibold text-stone-900">గోప్యత</h2>
