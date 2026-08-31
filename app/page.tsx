@@ -7,7 +7,8 @@ import TranscriptEditor from "@/components/TranscriptEditor";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
-import { appendTranscript, correctTeluguTranscript } from "@/lib/speechRecognition";
+import { appendTranscript, TELUGU_LANG } from "@/lib/speechRecognition";
+// import { ENGLISH_LANG, type SpeechLanguage } from "@/lib/speechRecognition";
 
 const EXAMPLE_SENTENCES = [
   "నా పేరు మహేందర్.",
@@ -42,52 +43,78 @@ export default function Home() {
   const [correctError, setCorrectError] = useState("");
   const [isCorrecting, setIsCorrecting] = useState(false);
   const [showHelp, setShowHelp] = useState<boolean | null>(null);
+  const speechLang = TELUGU_LANG;
+  // const [speechLang, setSpeechLang] = useState<SpeechLanguage>(TELUGU_LANG);
   const committedTextRef = useRef("");
-  const sessionTextRef = useRef("");
-  const acceptingRef = useRef(false);
 
-  const handleFinalTranscript = useCallback((chunk: string) => {
-    if (!acceptingRef.current) {
+  const handleSessionComplete = useCallback(async (raw: string) => {
+    const sessionRaw = raw.trim();
+    if (!sessionRaw) {
       return;
     }
 
-    sessionTextRef.current = appendTranscript(sessionTextRef.current, chunk);
-    setText(appendTranscript(committedTextRef.current, sessionTextRef.current));
+    setRecognizedText(sessionRaw);
+    const preview = appendTranscript(committedTextRef.current, sessionRaw);
+    setText(preview);
+    setCorrectError("");
+    setIsCorrecting(true);
+
+    try {
+      const response = await fetch("/api/correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: sessionRaw,
+          language: "te",
+        }),
+      });
+      const data = (await response.json()) as { text?: string; error?: string };
+      if (!response.ok || typeof data.text !== "string" || !data.text.trim()) {
+        throw new Error(data.error || "correct-failed");
+      }
+
+      const next = data.text.trim();
+      const combined = appendTranscript(committedTextRef.current, next);
+      committedTextRef.current = combined;
+      setText(combined);
+      setRecognizedText(sessionRaw !== next ? sessionRaw : "");
+    } catch {
+      committedTextRef.current = preview;
+      setCorrectError(CORRECT_FAIL);
+    } finally {
+      setIsCorrecting(false);
+    }
   }, []);
 
-  const { state, interimTranscript, errorMessage, startRecognition, stopRecognition } =
+  const { state, interimTranscript, sessionTranscript, errorMessage, startRecognition, stopRecognition } =
     useSpeechRecognition({
-      onFinalTranscript: handleFinalTranscript,
+      language: speechLang,
+      onSessionComplete: handleSessionComplete,
     });
 
   const { isSpeaking, isPreparing, speakError, speakText, stopSpeaking } = useSpeechSynthesis();
-  const isListening = state === "listening" || state === "processing";
+  const isListening = state === "listening";
+  const isProcessing = state === "processing" || isCorrecting;
+  const liveText = isListening || state === "processing"
+    ? appendTranscript(committedTextRef.current, sessionTranscript)
+    : text;
 
   const handleMicToggle = useCallback(() => {
-    if (state === "unsupported") {
+    if (state === "unsupported" || isProcessing) {
       return;
     }
 
     if (isListening) {
       stopRecognition();
-      acceptingRef.current = false;
-      const raw = sessionTextRef.current.trim();
-      const corrected = correctTeluguTranscript(raw);
-      const next = appendTranscript(committedTextRef.current, corrected);
-      committedTextRef.current = next;
-      sessionTextRef.current = "";
-      setText(next);
-      setRecognizedText(raw && raw !== corrected ? raw : "");
       return;
     }
 
     stopSpeaking();
-    acceptingRef.current = true;
-    sessionTextRef.current = "";
     committedTextRef.current = text;
     setRecognizedText("");
+    setCorrectError("");
     startRecognition();
-  }, [isListening, startRecognition, state, stopRecognition, stopSpeaking, text]);
+  }, [isListening, isProcessing, startRecognition, state, stopRecognition, stopSpeaking, text]);
 
   useEffect(() => {
     try {
@@ -153,7 +180,7 @@ export default function Home() {
 
   const handleCorrect = useCallback(async () => {
     const value = text.trim();
-    if (!value || isListening || isCorrecting) {
+    if (!value || isListening || isProcessing) {
       return;
     }
 
@@ -165,7 +192,10 @@ export default function Home() {
       const response = await fetch("/api/correct", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value }),
+        body: JSON.stringify({
+          text: value,
+          language: "te",
+        }),
       });
       const data = (await response.json()) as { text?: string; error?: string };
       if (!response.ok || typeof data.text !== "string" || !data.text.trim()) {
@@ -174,7 +204,6 @@ export default function Home() {
 
       const next = data.text.trim();
       committedTextRef.current = next;
-      sessionTextRef.current = "";
       setRecognizedText(value !== next ? value : "");
       setText(next);
     } catch {
@@ -182,13 +211,11 @@ export default function Home() {
     } finally {
       setIsCorrecting(false);
     }
-  }, [isCorrecting, isListening, stopSpeaking, text]);
+  }, [isListening, isProcessing, stopSpeaking, text]);
 
   const handleClear = useCallback(() => {
     stopSpeaking();
-    acceptingRef.current = false;
     committedTextRef.current = "";
-    sessionTextRef.current = "";
     setText("");
     setRecognizedText("");
     setCopied(false);
@@ -289,21 +316,33 @@ export default function Home() {
       ) : null}
 
       <section className="mt-5 rounded-3xl border border-orange-100 bg-white p-5 shadow-[0_12px_40px_rgba(194,65,12,0.08)] sm:p-7">
-        <VoiceRecorder state={state} onToggle={handleMicToggle} />
+        {/* Language is Telugu-only by default. English toggle is kept commented.
+        <div className="mb-4 flex justify-center gap-2">
+          <button type="button" className="rounded-full bg-orange-100 px-3 py-1.5 text-sm font-medium text-orange-900">
+            తెలుగు
+          </button>
+          <button type="button" className="rounded-full bg-stone-100 px-3 py-1.5 text-sm font-medium text-stone-600">
+            English
+          </button>
+        </div>
+        */}
+
+        <VoiceRecorder state={isProcessing && state !== "listening" ? "processing" : state} onToggle={handleMicToggle} />
 
         <div className="mt-5">
           <TranscriptEditor
-            value={text}
+            value={liveText}
             onChange={(next) => {
+              if (isListening || isProcessing) {
+                return;
+              }
               stopSpeaking();
-              acceptingRef.current = false;
               committedTextRef.current = next;
-              sessionTextRef.current = "";
               setRecognizedText("");
               setText(next);
             }}
-            interimTranscript={interimTranscript}
-            isListening={isListening}
+            interimTranscript={isListening || state === "processing" ? interimTranscript : ""}
+            isListening={isListening || state === "processing"}
             recognizedText={recognizedText}
           />
         </div>
@@ -318,7 +357,7 @@ export default function Home() {
             correctError={correctError}
             isSpeaking={isSpeaking}
             isPreparingSpeech={isPreparing}
-            isCorrecting={isCorrecting}
+            isCorrecting={isProcessing}
             onListen={() => speakText(text)}
             onStopListen={stopSpeaking}
             onCorrect={() => {

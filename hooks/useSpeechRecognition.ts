@@ -5,18 +5,42 @@ import {
   createSpeechRecognition,
   getSpeechErrorMessage,
   isSpeechRecognitionSupported,
+  joinUniqueTranscripts,
+  TELUGU_LANG,
   type RecognitionState,
+  type SpeechLanguage,
   type SpeechRecognitionEventLike,
   type SpeechRecognitionInstance,
 } from "@/lib/speechRecognition";
 
 type UseSpeechRecognitionOptions = {
-  onFinalTranscript?: (text: string) => void;
+  language?: SpeechLanguage;
+  onSessionComplete?: (text: string) => void | Promise<void>;
 };
 
 const emptySubscribe = () => () => {};
-const RESTART_DELAY_MS = 180;
-const MAX_NETWORK_RETRIES = 3;
+
+function pushUniqueFinal(parts: string[], incoming: string): string[] {
+  const next = incoming.trim();
+  if (!next) {
+    return parts;
+  }
+
+  const last = parts[parts.length - 1] ?? "";
+  if (!last) {
+    return [next];
+  }
+
+  if (last === next || last.endsWith(next)) {
+    return parts;
+  }
+
+  if (next.startsWith(last) && next.length > last.length) {
+    return [...parts.slice(0, -1), next];
+  }
+
+  return [...parts, next];
+}
 
 export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
   const isSupported = useSyncExternalStore(
@@ -26,180 +50,175 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
   );
   const [runtimeState, setRuntimeState] = useState<RecognitionState>("idle");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const [sessionTranscript, setSessionTranscript] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const state: RecognitionState = isSupported ? runtimeState : "unsupported";
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const wantListeningRef = useRef(false);
   const startingRef = useRef(false);
-  const restartTimerRef = useRef<number | null>(null);
+  const sessionClosedRef = useRef(true);
+  const lastFinalIndexRef = useRef(-1);
+  const sessionFinalsRef = useRef<string[]>([]);
   const interimRef = useRef("");
-  const networkRetriesRef = useRef(0);
-  const onFinalRef = useRef(options.onFinalTranscript);
+  const languageRef = useRef<SpeechLanguage>(options.language ?? TELUGU_LANG);
+  const onSessionCompleteRef = useRef(options.onSessionComplete);
 
   useEffect(() => {
-    onFinalRef.current = options.onFinalTranscript;
-  }, [options.onFinalTranscript]);
+    languageRef.current = options.language ?? TELUGU_LANG;
+  }, [options.language]);
 
-  const clearRestartTimer = useCallback(() => {
-    if (restartTimerRef.current != null) {
-      window.clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
+  useEffect(() => {
+    onSessionCompleteRef.current = options.onSessionComplete;
+  }, [options.onSessionComplete]);
+
+  const disposeRecognition = useCallback(() => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (!recognition) {
+      return;
     }
-  }, []);
 
-  const flushInterim = useCallback(() => {
-    const leftover = interimRef.current.trim();
-    interimRef.current = "";
-    setInterimTranscript("");
-    if (leftover) {
-      onFinalRef.current?.(leftover);
-    }
-  }, []);
-
-  const bindRecognition = useCallback((recognition: SpeechRecognitionInstance) => {
-    recognition.onstart = () => {
-      startingRef.current = false;
-      if (wantListeningRef.current) {
-        setRuntimeState("listening");
-      }
-    };
-
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
     recognition.onspeechend = null;
 
-    recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let interim = "";
-      let finalChunk = "";
+    try {
+      recognition.abort();
+    } catch {
+      // already stopped
+    }
+  }, []);
 
-      for (let i = 0; i < event.results.length; i += 1) {
-        const piece = event.results[i][0]?.transcript ?? "";
-        if (event.results[i].isFinal) {
-          if (i >= event.resultIndex) {
-            finalChunk += piece;
-          }
-        } else {
-          interim += piece;
-        }
-      }
+  const finalizeSession = useCallback(async () => {
+    if (sessionClosedRef.current) {
+      return;
+    }
 
-      const trimmedFinal = finalChunk.trim();
-      if (trimmedFinal) {
-        onFinalRef.current?.(trimmedFinal);
-        networkRetriesRef.current = 0;
-        setErrorMessage("");
-      }
-
-      if (interim !== interimRef.current) {
-        interimRef.current = interim;
-        setInterimTranscript(interim);
-        if (interim) {
-          setErrorMessage("");
-        }
-      } else if (trimmedFinal && !interim) {
-        interimRef.current = "";
-        setInterimTranscript("");
-      }
-    };
-
-    recognition.onerror = (event) => {
-      const { error } = event;
-
-      if (error === "aborted") {
-        return;
-      }
-
-      if (error === "no-speech") {
-        setErrorMessage("");
-        return;
-      }
-
-      if (error === "network" && wantListeningRef.current) {
-        networkRetriesRef.current += 1;
-        if (networkRetriesRef.current < MAX_NETWORK_RETRIES) {
-          return;
-        }
-      }
-
-      wantListeningRef.current = false;
-      startingRef.current = false;
-      clearRestartTimer();
-      interimRef.current = "";
-      setInterimTranscript("");
-      setRuntimeState("error");
-      setErrorMessage(getSpeechErrorMessage(error));
-    };
-
-    recognition.onend = () => {
-      startingRef.current = false;
-      flushInterim();
-
-      if (!wantListeningRef.current || recognitionRef.current !== recognition) {
-        if (recognitionRef.current === recognition && !wantListeningRef.current) {
-          recognitionRef.current = null;
-        }
-        setRuntimeState((current) =>
-          current === "error" || current === "unsupported" ? current : "idle",
-        );
-        return;
-      }
-
-      clearRestartTimer();
-      restartTimerRef.current = window.setTimeout(() => {
-        restartTimerRef.current = null;
-        if (!wantListeningRef.current || startingRef.current) {
-          return;
-        }
-
-        const current = recognitionRef.current ?? recognition;
-        startingRef.current = true;
-        try {
-          current.start();
-          setRuntimeState("listening");
-        } catch {
-          try {
-            const next = createSpeechRecognition();
-            if (!next) {
-              wantListeningRef.current = false;
-              recognitionRef.current = null;
-              startingRef.current = false;
-              setRuntimeState("idle");
-              return;
-            }
-            recognitionRef.current = next;
-            bindRecognition(next);
-            next.start();
-            setRuntimeState("listening");
-          } catch {
-            wantListeningRef.current = false;
-            recognitionRef.current = null;
-            startingRef.current = false;
-            setRuntimeState("idle");
-            setInterimTranscript("");
-          }
-        }
-      }, RESTART_DELAY_MS);
-    };
-  }, [clearRestartTimer, flushInterim]);
-
-  const stopRecognition = useCallback(() => {
+    sessionClosedRef.current = true;
     wantListeningRef.current = false;
     startingRef.current = false;
-    clearRestartTimer();
-    flushInterim();
+    setRuntimeState("processing");
+
+    const leftover = interimRef.current.trim();
+    if (leftover) {
+      sessionFinalsRef.current = pushUniqueFinal(sessionFinalsRef.current, leftover);
+    }
+
+    interimRef.current = "";
+    setInterimTranscript("");
+
+    const combined = joinUniqueTranscripts(sessionFinalsRef.current);
+    setSessionTranscript(combined);
+
+    try {
+      await onSessionCompleteRef.current?.(combined);
+    } finally {
+      disposeRecognition();
+      setRuntimeState(combined ? "completed" : "idle");
+    }
+  }, [disposeRecognition]);
+
+  const bindRecognition = useCallback(
+    (recognition: SpeechRecognitionInstance) => {
+      recognition.onstart = () => {
+        startingRef.current = false;
+        if (wantListeningRef.current && !sessionClosedRef.current) {
+          setRuntimeState("listening");
+        }
+      };
+
+      recognition.onspeechend = null;
+
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        if (sessionClosedRef.current) {
+          return;
+        }
+
+        let interim = "";
+
+        for (let i = 0; i < event.results.length; i += 1) {
+          const piece = event.results[i][0]?.transcript ?? "";
+          if (event.results[i].isFinal) {
+            if (i > lastFinalIndexRef.current) {
+              lastFinalIndexRef.current = i;
+              sessionFinalsRef.current = pushUniqueFinal(sessionFinalsRef.current, piece);
+            }
+          } else {
+            interim += piece;
+          }
+        }
+
+        const joined = joinUniqueTranscripts(sessionFinalsRef.current);
+        setSessionTranscript(joined);
+
+        if (interim !== interimRef.current) {
+          interimRef.current = interim;
+          setInterimTranscript(interim);
+        }
+
+        if (joined || interim) {
+          setErrorMessage("");
+        }
+      };
+
+      recognition.onerror = (event) => {
+        const { error } = event;
+
+        if (error === "aborted") {
+          return;
+        }
+
+        if (error === "no-speech") {
+          setErrorMessage("");
+          return;
+        }
+
+        wantListeningRef.current = false;
+        startingRef.current = false;
+        sessionClosedRef.current = true;
+        interimRef.current = "";
+        setInterimTranscript("");
+        disposeRecognition();
+        setRuntimeState("error");
+        setErrorMessage(getSpeechErrorMessage(error));
+      };
+
+      recognition.onend = () => {
+        startingRef.current = false;
+        void finalizeSession();
+      };
+    },
+    [disposeRecognition, finalizeSession],
+  );
+
+  const stopRecognition = useCallback(() => {
+    if (runtimeState === "processing") {
+      return;
+    }
+
+    if (!wantListeningRef.current && runtimeState !== "listening") {
+      return;
+    }
+
+    wantListeningRef.current = false;
+    startingRef.current = false;
+    setRuntimeState("processing");
 
     const recognition = recognitionRef.current;
     if (!recognition) {
-      setRuntimeState("idle");
+      void finalizeSession();
       return;
     }
 
     try {
       recognition.stop();
     } catch {
-      recognitionRef.current = null;
-      setRuntimeState("idle");
+      void finalizeSession();
     }
-  }, [clearRestartTimer, flushInterim]);
+  }, [finalizeSession, runtimeState]);
 
   const startRecognition = useCallback(() => {
     if (!isSpeechRecognitionSupported()) {
@@ -207,69 +226,58 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       return;
     }
 
-    if (wantListeningRef.current) {
+    if (
+      wantListeningRef.current ||
+      startingRef.current ||
+      runtimeState === "listening" ||
+      runtimeState === "processing"
+    ) {
       return;
     }
 
+    disposeRecognition();
+
     wantListeningRef.current = true;
-    networkRetriesRef.current = 0;
-    setErrorMessage("");
+    startingRef.current = true;
+    sessionClosedRef.current = false;
+    lastFinalIndexRef.current = -1;
+    sessionFinalsRef.current = [];
     interimRef.current = "";
+    setErrorMessage("");
     setInterimTranscript("");
+    setSessionTranscript("");
     setRuntimeState("listening");
 
-    let recognition = recognitionRef.current;
+    const recognition = createSpeechRecognition(languageRef.current);
     if (!recognition) {
-      recognition = createSpeechRecognition();
-      if (!recognition) {
-        wantListeningRef.current = false;
-        setRuntimeState("unsupported");
-        return;
-      }
-      recognitionRef.current = recognition;
-      bindRecognition(recognition);
+      wantListeningRef.current = false;
+      startingRef.current = false;
+      sessionClosedRef.current = true;
+      setRuntimeState("unsupported");
+      return;
     }
 
-    startingRef.current = true;
+    recognitionRef.current = recognition;
+    bindRecognition(recognition);
+
     try {
       recognition.start();
     } catch {
-      try {
-        recognition.abort();
-      } catch {
-        // already stopped
-      }
-
-      const retry = createSpeechRecognition();
-      if (!retry) {
-        wantListeningRef.current = false;
-        startingRef.current = false;
-        recognitionRef.current = null;
-        setRuntimeState("error");
-        setErrorMessage(getSpeechErrorMessage("start-failed"));
-        return;
-      }
-
-      recognitionRef.current = retry;
-      bindRecognition(retry);
-      try {
-        retry.start();
-      } catch {
-        wantListeningRef.current = false;
-        startingRef.current = false;
-        recognitionRef.current = null;
-        setRuntimeState("error");
-        setErrorMessage(getSpeechErrorMessage("start-failed"));
-      }
+      wantListeningRef.current = false;
+      startingRef.current = false;
+      sessionClosedRef.current = true;
+      disposeRecognition();
+      setRuntimeState("error");
+      setErrorMessage(getSpeechErrorMessage("start-failed"));
     }
-  }, [bindRecognition]);
+  }, [bindRecognition, disposeRecognition, runtimeState]);
 
   const toggleRecognition = useCallback(() => {
-    if (state === "unsupported") {
+    if (state === "unsupported" || state === "processing") {
       return;
     }
 
-    if (wantListeningRef.current || state === "listening" || state === "processing") {
+    if (wantListeningRef.current || state === "listening") {
       stopRecognition();
       return;
     }
@@ -281,21 +289,15 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
     return () => {
       wantListeningRef.current = false;
       startingRef.current = false;
-      if (restartTimerRef.current != null) {
-        window.clearTimeout(restartTimerRef.current);
-      }
-      try {
-        recognitionRef.current?.abort();
-      } catch {
-        // Recognition may already be stopped.
-      }
-      recognitionRef.current = null;
+      sessionClosedRef.current = true;
+      disposeRecognition();
     };
-  }, []);
+  }, [disposeRecognition]);
 
   return {
     state,
     interimTranscript,
+    sessionTranscript,
     errorMessage,
     isSupported,
     startRecognition,

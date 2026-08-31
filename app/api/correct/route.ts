@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { correctTeluguWithAi } from "@/lib/aiCorrect";
+import { correctSpeechWithAi } from "@/lib/aiCorrect";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const corrected = await correctTeluguWithAi(text);
+    const corrected = await correctSpeechWithAi(text, "te");
     return NextResponse.json({ text: corrected });
   } catch (error) {
     const message = error instanceof Error ? error.message : "correct-failed";

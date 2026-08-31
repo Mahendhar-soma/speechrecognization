@@ -2,10 +2,14 @@ export type RecognitionState =
   | "idle"
   | "listening"
   | "processing"
+  | "completed"
   | "error"
   | "unsupported";
 
 export const TELUGU_LANG = "te-IN";
+// export const ENGLISH_LANG = "en-IN";
+export type SpeechLanguage = typeof TELUGU_LANG;
+// export type SpeechLanguage = typeof TELUGU_LANG | typeof ENGLISH_LANG;
 
 export interface SpeechRecognitionAlternativeLike {
   transcript: string;
@@ -71,14 +75,16 @@ export function isSpeechRecognitionSupported(): boolean {
   return getSpeechRecognitionConstructor() !== null;
 }
 
-export function createSpeechRecognition(): SpeechRecognitionInstance | null {
+export function createSpeechRecognition(
+  lang: SpeechLanguage = TELUGU_LANG,
+): SpeechRecognitionInstance | null {
   const SpeechRecognitionAPI = getSpeechRecognitionConstructor();
   if (!SpeechRecognitionAPI) {
     return null;
   }
 
   const recognition = new SpeechRecognitionAPI();
-  recognition.lang = TELUGU_LANG;
+  recognition.lang = lang;
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
@@ -131,6 +137,10 @@ export function appendTranscript(existing: string, incoming: string): string {
 
   const separator = /[\s]$/.test(existing) ? "" : " ";
   return `${existing}${separator}${next}`;
+}
+
+export function joinUniqueTranscripts(parts: string[]): string {
+  return parts.reduce((combined, part) => appendTranscript(combined, part), "");
 }
 
 export function correctTeluguTranscript(text: string): string {
