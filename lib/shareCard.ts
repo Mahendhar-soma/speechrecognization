@@ -456,11 +456,11 @@ export async function renderShareCard(
   });
 }
 
-export async function shareCardImage(blob: Blob, caption: string): Promise<void> {
+export async function shareCardImage(blob: Blob): Promise<void> {
   const file = new File([blob], "telugu-card.png", { type: "image/png" });
 
   if (navigator.canShare?.({ files: [file] })) {
-    await navigator.share({ files: [file], text: caption });
+    await navigator.share({ files: [file] });
     return;
   }
 

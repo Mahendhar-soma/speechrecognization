@@ -249,7 +249,7 @@ export default function Home() {
       const theme = getWishTheme(value, kind);
       const blob =
         cardBlob ?? (await renderShareCard(value, kind, undefined, cardHeadingFor(kind, theme), theme.style));
-      await shareCardImage(blob, value);
+      await shareCardImage(blob);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
