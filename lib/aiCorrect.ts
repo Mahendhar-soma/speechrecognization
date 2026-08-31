@@ -1,3 +1,5 @@
+import { formatHint, type MessageFormat } from "@/lib/messageFormats";
+
 type ChatCompletionResponse = {
   choices?: Array<{
     message?: {
@@ -26,13 +28,17 @@ const SYSTEM_PROMPT = [
   "Return only the corrected Telugu text. No quotes, labels, or commentary.",
 ].join(" ");
 
-export async function correctSpeechWithAi(text: string, _languageHint?: "te" | "en"): Promise<string> {
+export async function correctSpeechWithAi(
+  text: string,
+  _languageHint?: "te" | "en",
+  format: MessageFormat = "plain",
+): Promise<string> {
   const value = text.trim();
   if (!value) {
     throw new Error("empty-text");
   }
 
-  if (value.length > 3000) {
+  if (value.length > 8000) {
     throw new Error("text-too-long");
   }
 
@@ -48,8 +54,7 @@ export async function correctSpeechWithAi(text: string, _languageHint?: "te" | "
     throw new Error("unsupported-provider");
   }
 
-  const hint =
-    "Language: Telugu only. Convert romanized or mixed Telugu speech into correct, meaningful Telugu sentences.";
+  const hint = formatHint(format);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

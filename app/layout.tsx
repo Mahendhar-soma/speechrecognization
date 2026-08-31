@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Telugu } from "next/font/google";
+import { Noto_Sans_Telugu, Noto_Serif_Telugu } from "next/font/google";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
 import PwaRegister from "@/components/PwaRegister";
@@ -9,6 +9,13 @@ const notoSansTelugu = Noto_Sans_Telugu({
   subsets: ["telugu", "latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
+});
+
+const notoSerifTelugu = Noto_Serif_Telugu({
+  subsets: ["telugu"],
+  weight: ["600", "700"],
+  display: "swap",
+  variable: "--font-telugu-serif",
 });
 
 export const metadata: Metadata = {
@@ -42,7 +49,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="te" className={`${notoSansTelugu.className} h-full antialiased`}>
+    <html lang="te" className={`${notoSansTelugu.className} ${notoSerifTelugu.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-[#fff6eb] text-stone-900">
         <PwaRegister />
         <Header />

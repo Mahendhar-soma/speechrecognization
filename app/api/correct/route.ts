@@ -1,20 +1,23 @@
 import { NextResponse } from "next/server";
 import { correctSpeechWithAi } from "@/lib/aiCorrect";
+import { isMessageFormat, type MessageFormat } from "@/lib/messageFormats";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   let text = "";
+  let format: MessageFormat = "plain";
 
   try {
-    const body = (await request.json()) as { text?: unknown };
+    const body = (await request.json()) as { text?: unknown; format?: unknown };
     text = typeof body.text === "string" ? body.text : "";
+    format = isMessageFormat(body.format) ? body.format : "plain";
   } catch {
     return NextResponse.json({ error: "invalid-request" }, { status: 400 });
   }
 
   try {
-    const corrected = await correctSpeechWithAi(text, "te");
+    const corrected = await correctSpeechWithAi(text, "te", format);
     return NextResponse.json({ text: corrected });
   } catch (error) {
     const message = error instanceof Error ? error.message : "correct-failed";

@@ -2,24 +2,44 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ActionButtons from "@/components/ActionButtons";
+import FormatPicker, { type OutputMode } from "@/components/FormatPicker";
+import ShareCardPreview from "@/components/ShareCardPreview";
 import StatusIndicator from "@/components/StatusIndicator";
 import TranscriptEditor from "@/components/TranscriptEditor";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
+import type { MessageFormat } from "@/lib/messageFormats";
+import { renderShareCard, shareCardImage, type ShareCardKind } from "@/lib/shareCard";
+import { cardHeadingFor, getWishTheme } from "@/lib/wishThemes";
 import { appendTranscript, TELUGU_LANG } from "@/lib/speechRecognition";
 // import { ENGLISH_LANG, type SpeechLanguage } from "@/lib/speechRecognition";
 
 const EXAMPLE_SENTENCES = [
   "నా పేరు మహేందర్.",
   "నేను హైదరాబాద్‌లో ఉంటున్నాను.",
-  "నేను సాఫ్ట్‌వేర్ ఇంజనీర్‌గా పనిచేస్తున్నాను.",
+  "బతుకమ్మ శుభాకాంక్షలు.",
   "రేపు ఉదయం పది గంటలకు మీటింగ్ ఉంది.",
 ];
 
 const COPY_FAIL = "టెక్స్ట్ కాపీ కాలేదు. దయచేసి మళ్లీ ప్రయత్నించండి.";
 const SHARE_FAIL = "టెక్స్ట్ పంపలేకపోయాము. కాపీ చేసి పేస్ట్ చేయండి.";
 const CORRECT_FAIL = "టెక్స్ట్ సరిచేయలేకపోయాము. దయచేసి మళ్లీ ప్రయత్నించండి.";
+const CARD_FAIL = "కార్డ్ పంపలేకపోయాము. దయచేసి మళ్లీ ప్రయత్నించండి.";
+
+function toMessageFormat(mode: OutputMode): MessageFormat {
+  return mode === "card" ? "wish" : mode;
+}
+
+function toCardKind(mode: OutputMode): ShareCardKind {
+  if (mode === "notice") {
+    return "notice";
+  }
+  if (mode === "wish" || mode === "card") {
+    return "wish";
+  }
+  return "plain";
+}
 
 function copyText(value: string): boolean {
   const field = document.createElement("textarea");
@@ -42,7 +62,9 @@ export default function Home() {
   const [shareError, setShareError] = useState("");
   const [correctError, setCorrectError] = useState("");
   const [isCorrecting, setIsCorrecting] = useState(false);
+  const [outputMode, setOutputMode] = useState<OutputMode>("plain");
   const [showHelp, setShowHelp] = useState<boolean | null>(null);
+  const [cardBlob, setCardBlob] = useState<Blob | null>(null);
   const speechLang = TELUGU_LANG;
   // const [speechLang, setSpeechLang] = useState<SpeechLanguage>(TELUGU_LANG);
   const committedTextRef = useRef("");
@@ -66,6 +88,7 @@ export default function Home() {
         body: JSON.stringify({
           text: sessionRaw,
           language: "te",
+          format: toMessageFormat(outputMode),
         }),
       });
       const data = (await response.json()) as { text?: string; error?: string };
@@ -84,7 +107,7 @@ export default function Home() {
     } finally {
       setIsCorrecting(false);
     }
-  }, []);
+  }, [outputMode]);
 
   const { state, interimTranscript, sessionTranscript, errorMessage, startRecognition, stopRecognition } =
     useSpeechRecognition({
@@ -195,6 +218,7 @@ export default function Home() {
         body: JSON.stringify({
           text: value,
           language: "te",
+          format: toMessageFormat(outputMode),
         }),
       });
       const data = (await response.json()) as { text?: string; error?: string };
@@ -211,7 +235,28 @@ export default function Home() {
     } finally {
       setIsCorrecting(false);
     }
-  }, [isListening, isProcessing, stopSpeaking, text]);
+  }, [isListening, isProcessing, outputMode, stopSpeaking, text]);
+
+  const handleShareCard = useCallback(async () => {
+    const value = text.trim();
+    if (!value) {
+      return;
+    }
+
+    setShareError("");
+    try {
+      const kind = toCardKind(outputMode);
+      const theme = getWishTheme(value, kind);
+      const blob =
+        cardBlob ?? (await renderShareCard(value, kind, undefined, cardHeadingFor(kind, theme), theme.style));
+      await shareCardImage(blob, value);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      setShareError(CARD_FAIL);
+    }
+  }, [cardBlob, outputMode, text]);
 
   const handleClear = useCallback(() => {
     stopSpeaking();
@@ -310,7 +355,8 @@ export default function Home() {
             <li>మైక్ మళ్లీ నొక్కండి — టెక్స్ట్ ఇక్కడ కనిపిస్తుంది.</li>
             <li>వాక్యం సరిచేయబడుతుంది. తప్పు ఉంటే టెక్స్ట్‌లో సరిచేయండి.</li>
             <li>వినండి నొక్కి సరిచేసిన టెక్స్ట్ వినండి.</li>
-            <li>తెలుగు టెక్స్ట్ సరిచేయండి నొక్కి సరైన వాక్యంగా మార్చండి.</li>
+            <li>సాధారణం / నోటీసు / శుభాకాంక్షలు ఎంచుకోండి.</li>
+            <li>కార్డ్ ఎంచుకుని శుభాకాంక్ష ఇమేజ్ పంపండి.</li>
           </ol>
         </section>
       ) : null}
@@ -326,6 +372,8 @@ export default function Home() {
           </button>
         </div>
         */}
+
+        <FormatPicker value={outputMode} onChange={setOutputMode} disabled={isListening || isProcessing} />
 
         <VoiceRecorder state={isProcessing && state !== "listening" ? "processing" : state} onToggle={handleMicToggle} />
 
@@ -347,6 +395,10 @@ export default function Home() {
           />
         </div>
 
+        {outputMode !== "plain" && text.trim() && !isListening ? (
+          <ShareCardPreview text={text} kind={toCardKind(outputMode)} onBlob={setCardBlob} />
+        ) : null}
+
         <div className="mt-4">
           <ActionButtons
             text={text}
@@ -358,6 +410,13 @@ export default function Home() {
             isSpeaking={isSpeaking}
             isPreparingSpeech={isPreparing}
             isCorrecting={isProcessing}
+            correctLabel={
+              outputMode === "notice"
+                ? "నోటీసుగా మార్చండి"
+                : outputMode === "wish"
+                  ? "శుభాకాంక్షగా మార్చండి"
+                  : "తెలుగు టెక్స్ట్ సరిచేయండి"
+            }
             onListen={() => speakText(text)}
             onStopListen={stopSpeaking}
             onCorrect={() => {
@@ -369,6 +428,13 @@ export default function Home() {
             onShare={() => {
               void handleShare();
             }}
+            onShareCard={
+              outputMode === "card" || outputMode === "wish" || outputMode === "notice"
+                ? () => {
+                    void handleShareCard();
+                  }
+                : undefined
+            }
             onClear={handleClear}
           />
         </div>

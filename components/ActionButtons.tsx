@@ -17,7 +17,10 @@ type ActionButtonsProps = {
   onCorrect: () => void;
   onCopy: () => void;
   onShare: () => void;
+  onShareCard?: () => void;
   onClear: () => void;
+  correctLabel?: string;
+  shareCardLabel?: string;
 };
 
 export default function ActionButtons({
@@ -35,7 +38,10 @@ export default function ActionButtons({
   onCorrect,
   onCopy,
   onShare,
+  onShareCard,
   onClear,
+  correctLabel = "తెలుగు టెక్స్ట్ సరిచేయండి",
+  shareCardLabel = "కార్డ్ పంపండి",
 }: ActionButtonsProps) {
   const [confirmingClear, setConfirmingClear] = useState(false);
   const hasText = text.trim().length > 0;
@@ -72,7 +78,7 @@ export default function ActionButtons({
         aria-label="తెలుగు టెక్స్ట్ సరిచేయండి"
         className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-600 px-3 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
       >
-        {isCorrecting ? "సరిచేస్తోంది…" : "తెలుగు టెక్స్ట్ సరిచేయండి"}
+        {isCorrecting ? "సరిచేస్తోంది…" : correctLabel}
       </button>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
@@ -117,6 +123,17 @@ export default function ActionButtons({
           {confirmingClear ? "ఖచ్చితంగా?" : "తొలగించండి"}
         </button>
       </div>
+
+      {onShareCard ? (
+        <button
+          type="button"
+          onClick={onShareCard}
+          disabled={!hasText}
+          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-orange-700 px-3 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-orange-800 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+        >
+          {shareCardLabel}
+        </button>
+      ) : null}
 
       {confirmingClear ? (
         <button
