@@ -1,3 +1,5 @@
+import { blobToDataUrl, getAndroidBridge } from "@/lib/androidBridge";
+
 export type ShareCardKind = "notice" | "wish" | "plain";
 
 export type CardPlacement = "top" | "center" | "bottom";
@@ -457,6 +459,13 @@ export async function renderShareCard(
 }
 
 export async function shareCardImage(blob: Blob): Promise<void> {
+  const android = getAndroidBridge();
+  if (android?.shareImage) {
+    const imageUrl = await blobToDataUrl(blob);
+    android.shareImage(imageUrl);
+    return;
+  }
+
   const file = new File([blob], "telugu-card.png", { type: "image/png" });
 
   if (navigator.canShare?.({ files: [file] })) {

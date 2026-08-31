@@ -11,6 +11,7 @@ import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import type { MessageFormat } from "@/lib/messageFormats";
 import { renderShareCard, shareCardImage, type ShareCardKind } from "@/lib/shareCard";
+import { getAndroidBridge } from "@/lib/androidBridge";
 import { cardHeadingFor, getWishTheme } from "@/lib/wishThemes";
 import { appendTranscript, TELUGU_LANG } from "@/lib/speechRecognition";
 // import { ENGLISH_LANG, type SpeechLanguage } from "@/lib/speechRecognition";
@@ -187,6 +188,12 @@ export default function Home() {
     setCopyError("");
 
     try {
+      const android = getAndroidBridge();
+      if (android?.shareText) {
+        android.shareText(value);
+        return;
+      }
+
       if (navigator.share) {
         await navigator.share({ text: value });
         return;
@@ -435,6 +442,7 @@ export default function Home() {
                   }
                 : undefined
             }
+            shareCardLabel="💬 WhatsApp"
             onClear={handleClear}
           />
         </div>

@@ -41,7 +41,7 @@ export default function ActionButtons({
   onShareCard,
   onClear,
   correctLabel = "తెలుగు టెక్స్ట్ సరిచేయండి",
-  shareCardLabel = "కార్డ్ పంపండి",
+  shareCardLabel = "💬 WhatsApp",
 }: ActionButtonsProps) {
   const [confirmingClear, setConfirmingClear] = useState(false);
   const hasText = text.trim().length > 0;
@@ -130,6 +130,7 @@ export default function ActionButtons({
           onClick={onShareCard}
           disabled={!hasText}
           className="inline-flex min-h-11 items-center justify-center rounded-xl bg-orange-700 px-3 py-2.5 text-sm font-medium text-white outline-none transition hover:bg-orange-800 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+          aria-label="WhatsApp కార్డ్ పంపండి"
         >
           {shareCardLabel}
         </button>
